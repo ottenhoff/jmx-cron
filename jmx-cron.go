@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,8 +61,12 @@ func main() {
 
 	for _, TomcatInstance := range instances {
 		go getResponseTime(responseChannel, TomcatInstance)
-		logger.Debug("URL to test: ")
+		logger.Debug("URL to test: ", TomcatInstance)
 	}
+
+	// Wait for all the goroutines to finish, collecting the responses
+	tomcatCheckMapping := waitForDomains(responseChannel, len(instances))
+	logger.Debug("Final result:", tomcatCheckMapping)
 }
 
 func getInstancesFromPortal() []TomcatInstance {
@@ -116,7 +121,7 @@ func getResponseTime(returnChannel chan TomcatCheckResult, tomcat TomcatInstance
 
 	timeStart := time.Now()
 	resp, err := http.Get(urlToTest)
-	requestTime := time.Since(timeStart).String()
+	requestTime := strconv.FormatInt(time.Since(timeStart).Nanoseconds()/1000, 10)
 	httpOK := false
 
 	if err != nil {
@@ -133,4 +138,21 @@ func getResponseTime(returnChannel chan TomcatCheckResult, tomcat TomcatInstance
 
 	// Send our results back to the main processes via our return channel
 	returnChannel <- TomcatCheckResult{tomcat.ServerID, httpOK, requestTime}
+}
+
+// The extra set of parentheses here are the return type. You can give the return value a name,
+// in this case +tomcatCheckMapping+ and use that name in the function body. Then you don't need to specify
+// what actually gets returned, you've already defined it here.
+func waitForDomains(responseChannel chan TomcatCheckResult, instanceCount int) (tomcatCheckMapping []TomcatCheckResult) {
+	returnedCount := 0
+	for {
+		tomcatCheckMapping = append(tomcatCheckMapping, <-responseChannel)
+		returnedCount++
+
+		if returnedCount >= instanceCount {
+			break
+		}
+	}
+
+	return
 }
