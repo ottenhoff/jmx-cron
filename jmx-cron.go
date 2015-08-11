@@ -8,7 +8,9 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +24,7 @@ const cronUserAgent = "JMX-Cron v1.0"
 var token = flag.String("token", "", "the custom security token")
 var localIP = flag.String("ips", "", "ips to check")
 var clientID = flag.String("clientID", "", "client id")
+var jolokiaURL = flag.String("jolokia", "http://10.4.100.101:32222/jolokia", "Jolokia endpoint")
 
 //var propertyFiles = [4]string{"instance.properties", "dev.properties", "local.properties", "sakai.properties"}
 var logger = stdlog.GetFromFlags()
@@ -37,6 +40,15 @@ type TomcatInstance struct {
 	ProjectName string
 }
 
+// JolokiaReadResponse is the JSON-encoded info return from the Jolokia JMX proxy
+type JolokiaReadResponse struct {
+	Status    uint32
+	Timestamp uint32
+	Request   map[string]interface{}
+	Value     interface{}
+	Error     string
+}
+
 // TomcatCheckResult is returned from async call
 type TomcatCheckResult struct {
 	ServerID       string
@@ -50,6 +62,9 @@ func init() {
 		fmt.Println("Please provide a valid security token")
 		os.Exit(1)
 	}
+
+	// Limit the request concurrency
+	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
 func main() {
@@ -155,4 +170,31 @@ func waitForDomains(responseChannel chan TomcatCheckResult, instanceCount int) (
 	}
 
 	return
+}
+
+/*
+func GetAttr(service, domain, bean, attr string) (interface{}, error) {
+	resp, err := getAttr(service + "/jolokia/read/" + domain + ":" + bean + "/" + attr)
+	if err != nil {
+		return "", err
+	}
+	return resp.Value, nil
+}
+*/
+
+func getAttr(jURL string) (*JolokiaReadResponse, error) {
+	jsonRequest := "{\"attribute\":\"DaemonThreadCount,HeapMemoryUsage,ThreadCount,MaxFileDescriptorCount,OpenFileDescriptorCount,ProcessCpuTime\","
+	jsonRequest += "\"mbean\":\"java.lang:type=*\",\"target\":{\"url\":\"service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi\"},\"type\":\"READ\"}"
+
+	resp, respErr := http.PostForm(jURL, url.Values{jsonRequest})
+	if respErr != nil {
+		return nil, respErr
+	}
+	defer resp.Body.Close()
+	var respJ JolokiaReadResponse
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(&respJ); err != nil {
+		return nil, err
+	}
+	return &respJ, nil
 }
