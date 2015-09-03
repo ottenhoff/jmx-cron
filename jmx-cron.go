@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"runtime"
 	"strconv"
@@ -54,6 +53,7 @@ type JolokiaReadResponse struct {
 type TomcatCheckResult struct {
 	ServerID       string
 	ServerStatus   bool
+	DataType       string
 	ServerResponse string
 }
 
@@ -76,7 +76,12 @@ func main() {
 	responseChannel := make(chan TomcatCheckResult)
 
 	for _, TomcatInstance := range instances {
-		go getResponseTime(responseChannel, TomcatInstance)
+		urlToTest := "http://" + TomcatInstance.ServerIP + ":" + TomcatInstance.HTTPPort + "/"
+		if strings.Contains(TomcatInstance.ProjectName, "sakai") {
+			urlToTest += "portal/"
+		}
+
+		go getResponseTime(responseChannel, TomcatInstance, urlToTest)
 		logger.Debug("URL to test: ", TomcatInstance)
 	}
 
@@ -124,15 +129,9 @@ func getInstancesFromPortal() []TomcatInstance {
 	return tomcatInstances
 }
 
-func getResponseTime(returnChannel chan TomcatCheckResult, tomcat TomcatInstance) {
-	urlToTest := "http://" + tomcat.ServerIP + ":" + tomcat.HTTPPort + "/"
-	if strings.Contains(tomcat.ProjectName, "sakai") {
-		urlToTest += "portal/"
-	}
-
-	timeout := time.Duration(7 * time.Second)
+func getResponseTime(returnChannel chan TomcatCheckResult, tomcat TomcatInstance, urlToTest string) {
 	client := http.Client{
-		Timeout: timeout,
+		Timeout: time.Duration(7 * time.Second),
 	}
 	client.Get(urlToTest)
 
@@ -154,7 +153,7 @@ func getResponseTime(returnChannel chan TomcatCheckResult, tomcat TomcatInstance
 	}
 
 	// Send our results back to the main processes via our return channel
-	returnChannel <- TomcatCheckResult{tomcat.ServerID, httpOK, requestTime}
+	returnChannel <- TomcatCheckResult{tomcat.ServerID, httpOK, "time", requestTime}
 }
 
 // The extra set of parentheses here are the return type. You can give the return value a name,
@@ -209,13 +208,19 @@ func updateAdminPortal(tomcatChecks []TomcatCheckResult) {
 	}
 
 	// Unix time converted to a string
-	currentTime := strconv.FormatInt(time.Now().Unix(), 10)
+	//currentTime := strconv.FormatInt(time.Now().Unix(), 10)
 
-	postURL := "https://admin.longsight.com/longsight/healthinfo"
-	urlValues := url.Values{"time": {string(currentTime)}, "data": {string(jsonData)}}
-	logger.Debug("Values being sent to admin portal: ", urlValues)
+	postURL := "https://admin.longsight.com/longsight/go/healthinfo"
+	//urlValues := url.Values{"time": {string(currentTime)}, "data": {string(jsonData)}}
+	logger.Debug("Values being sent to admin portal: ", string(jsonData))
 
-	resp, err := http.PostForm(postURL, urlValues)
+	client := &http.Client{}
+	req, _ := http.NewRequest("POST", postURL, strings.NewReader(string(jsonData)))
+	req.Header.Set("X-Auth-Token", *token)
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("User-Agent", cronUserAgent)
+	resp, err := client.Do(req)
+
 	logger.Debug("Response from admin portal: ", resp)
 
 	if err != nil {
