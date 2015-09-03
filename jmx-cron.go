@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"runtime"
 	"strconv"
@@ -35,6 +34,7 @@ type TomcatInstance struct {
 	ServerID    string
 	JvmRoute    string
 	ServerIP    string
+	HTTPPort    string
 	JmxPort     string
 	ProjectID   string
 	ProjectName string
@@ -123,7 +123,7 @@ func getInstancesFromPortal() []TomcatInstance {
 }
 
 func getResponseTime(returnChannel chan TomcatCheckResult, tomcat TomcatInstance) {
-	urlToTest := "http://" + tomcat.ServerIP + ":" + tomcat.JmxPort + "/"
+	urlToTest := "http://" + tomcat.ServerIP + ":" + tomcat.HTTPPort + "/"
 	if strings.Contains(tomcat.ProjectName, "sakai") {
 		urlToTest += "portal/"
 	}
@@ -180,13 +180,13 @@ func GetAttr(service, domain, bean, attr string) (interface{}, error) {
 	}
 	return resp.Value, nil
 }
-*/
+
 
 func getAttr(jURL string) (*JolokiaReadResponse, error) {
 	jsonRequest := "{\"attribute\":\"DaemonThreadCount,HeapMemoryUsage,ThreadCount,MaxFileDescriptorCount,OpenFileDescriptorCount,ProcessCpuTime\","
 	jsonRequest += "\"mbean\":\"java.lang:type=*\",\"target\":{\"url\":\"service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi\"},\"type\":\"READ\"}"
 
-	resp, respErr := http.PostForm(jURL, url.Values{jsonRequest})
+	resp, respErr := http.Post(jURL, url.Values{jsonRequest})
 	if respErr != nil {
 		return nil, respErr
 	}
@@ -198,3 +198,4 @@ func getAttr(jURL string) (*JolokiaReadResponse, error) {
 	}
 	return &respJ, nil
 }
+*/
