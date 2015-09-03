@@ -78,7 +78,7 @@ func main() {
 	for _, TomcatInstance := range instances {
 		urlToTest := "http://" + TomcatInstance.ServerIP + ":" + TomcatInstance.HTTPPort + "/"
 		if strings.Contains(TomcatInstance.ProjectName, "sakai") {
-			urlToTest += "portal/"
+			urlToTest += "portal/xlogin"
 		}
 
 		go getResponseTime(responseChannel, TomcatInstance, urlToTest)
@@ -87,6 +87,8 @@ func main() {
 
 	// Wait for all the goroutines to finish, collecting the responses
 	tomcatCheckMapping := waitForDomains(responseChannel, len(instances))
+
+	// Send the info back to admin portal
 	updateAdminPortal(tomcatCheckMapping)
 	logger.Debug("Final result:", tomcatCheckMapping)
 }
