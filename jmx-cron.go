@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strconv"
@@ -81,6 +82,7 @@ func main() {
 
 	// Wait for all the goroutines to finish, collecting the responses
 	tomcatCheckMapping := waitForDomains(responseChannel, len(instances))
+	updateAdminPortal(tomcatCheckMapping)
 	logger.Debug("Final result:", tomcatCheckMapping)
 }
 
@@ -145,7 +147,7 @@ func getResponseTime(returnChannel chan TomcatCheckResult, tomcat TomcatInstance
 	} else {
 		defer resp.Body.Close()
 
-		logger.Debug("Request time and status:", requestTime, resp.StatusCode)
+		logger.Debug("Request time:", urlToTest, requestTime, resp.StatusCode)
 		if resp.StatusCode == http.StatusOK {
 			httpOK = true
 		}
@@ -199,3 +201,24 @@ func getAttr(jURL string) (*JolokiaReadResponse, error) {
 	return &respJ, nil
 }
 */
+
+func updateAdminPortal(tomcatChecks []TomcatCheckResult) {
+	jsonData, err := json.Marshal(tomcatChecks)
+	if err != nil {
+		panic(err)
+	}
+
+	// Unix time converted to a string
+	currentTime := strconv.FormatInt(time.Now().Unix(), 10)
+
+	postURL := "https://admin.longsight.com/longsight/healthinfo"
+	urlValues := url.Values{"time": {string(currentTime)}, "data": {string(jsonData)}}
+	logger.Debug("Values being sent to admin portal: ", urlValues)
+
+	resp, err := http.PostForm(postURL, urlValues)
+	logger.Debug("Response from admin portal: ", resp)
+
+	if err != nil {
+		panic("Could not POST update")
+	}
+}
