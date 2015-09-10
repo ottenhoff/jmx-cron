@@ -45,7 +45,7 @@ type JolokiaReadResponse struct {
 	Status    uint32
 	Timestamp uint32
 	Request   map[string]interface{}
-	Value     interface{}
+	Value     map[string]interface{}
 	Error     string
 }
 
@@ -83,6 +83,8 @@ func main() {
 
 		go getResponseTime(responseChannel, TomcatInstance, urlToTest)
 		logger.Debug("URL to test: ", TomcatInstance)
+
+		getAttr()
 	}
 
 	// Wait for all the goroutines to finish, collecting the responses
@@ -133,7 +135,7 @@ func getInstancesFromPortal() []TomcatInstance {
 
 func getResponseTime(returnChannel chan TomcatCheckResult, tomcat TomcatInstance, urlToTest string) {
 	client := http.Client{
-		Timeout: time.Duration(7 * time.Second),
+		Timeout: time.Duration(1 * time.Second),
 	}
 	client.Get(urlToTest)
 
@@ -176,20 +178,26 @@ func waitForDomains(responseChannel chan TomcatCheckResult, instanceCount int) (
 }
 
 /*
-func GetAttr(service, domain, bean, attr string) (interface{}, error) {
+func checkJolokia(service, domain, bean, attr string) (interface{}, error) {
+	logger.Debug("checkJolokia: " + service + "/jolokia/read/" + domain + ":" + bean + "/" + attr)
 	resp, err := getAttr(service + "/jolokia/read/" + domain + ":" + bean + "/" + attr)
 	if err != nil {
 		return "", err
 	}
 	return resp.Value, nil
 }
+*/
 
-
-func getAttr(jURL string) (*JolokiaReadResponse, error) {
+func getAttr() (*JolokiaReadResponse, error) {
 	jsonRequest := "{\"attribute\":\"DaemonThreadCount,HeapMemoryUsage,ThreadCount,MaxFileDescriptorCount,OpenFileDescriptorCount,ProcessCpuTime\","
 	jsonRequest += "\"mbean\":\"java.lang:type=*\",\"target\":{\"url\":\"service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi\"},\"type\":\"READ\"}"
 
-	resp, respErr := http.Post(jURL, url.Values{jsonRequest})
+	client := &http.Client{}
+	req, _ := http.NewRequest("POST", *jolokiaURL, strings.NewReader(jsonRequest))
+	//req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("User-Agent", cronUserAgent)
+	resp, respErr := client.Do(req)
+
 	if respErr != nil {
 		return nil, respErr
 	}
@@ -199,9 +207,34 @@ func getAttr(jURL string) (*JolokiaReadResponse, error) {
 	if err := dec.Decode(&respJ); err != nil {
 		return nil, err
 	}
+
+	m := &respJ.Value
+	z := m
+
+	for k, v := range *z {
+		m := v.(map[string]interface{})
+		for x, y := range m {
+			switch yy := y.(type) {
+			case string:
+				fmt.Println(x, "is string", yy)
+			case int:
+				fmt.Println(x, "is int", yy)
+			case float64:
+				fmt.Println(x, "is float64", yy)
+			case []interface{}:
+				fmt.Println(k, "is an array:")
+				for i, u := range yy {
+					fmt.Println(i, u)
+				}
+			default:
+				logger.Debugf("xx", yy)
+				fmt.Println(x, "is of a type I don't know how to handle")
+			}
+		}
+	}
+	//logger.Debugf("getAttr ", &respJ.Value)
 	return &respJ, nil
 }
-*/
 
 func updateAdminPortal(tomcatChecks []TomcatCheckResult) {
 	jsonData, err := json.Marshal(tomcatChecks)
