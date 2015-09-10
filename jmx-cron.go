@@ -219,7 +219,7 @@ func getAttr() (*JolokiaRequestResponse, error) {
 	//jsonRequest := "{\"attribute\":\"DaemonThreadCount,HeapMemoryUsage,ThreadCount,MaxFileDescriptorCount,OpenFileDescriptorCount,ProcessCpuTime\","
 	//jsonRequest += "\"mbean\":\"java.lang:type=*\",\"target\":{\"url\":\"service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi\"},\"type\":\"READ\"}"
 
-	jr := JolokiaRequest{
+	heapRequest := JolokiaRequest{
 		Type:      "READ",
 		Mbean:     "java.lang:type=Memory",
 		Attribute: "HeapMemoryUsage",
@@ -229,7 +229,10 @@ func getAttr() (*JolokiaRequestResponse, error) {
 		}{URL: "service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi"},
 	}
 
-	jsonRequest, err := json.Marshal(jr)
+	var a [5]JolokiaRequest
+	a[0] = heapRequest
+
+	jsonRequest, err := json.Marshal(a)
 	if err != nil {
 		panic("Could not marshal json for jolokia request")
 	}
