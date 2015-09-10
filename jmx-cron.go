@@ -99,8 +99,8 @@ func main() {
 	logger.Debug("Auto-detected IPs on this server")
 	instances := getInstancesFromPortal()
 
-	// This is the channel the responses will come back on
-	responseChannel := make(chan TomcatCheckResult)
+	// This is the channel the simple HTTP check responses will come back on
+	httpResponseChannel := make(chan []TomcatCheckResult)
 
 	for _, TomcatInstance := range instances {
 		urlToTest := "http://" + TomcatInstance.ServerIP + ":" + TomcatInstance.HTTPPort + "/"
@@ -108,17 +108,25 @@ func main() {
 			urlToTest += "portal/xlogin"
 		}
 
-		go getResponseTime(responseChannel, TomcatInstance, urlToTest)
-		logger.Debug("URL to test: ", TomcatInstance)
+		go getHTTPResponseTime(httpResponseChannel, TomcatInstance, urlToTest)
 	}
 
 	// Wait for all the goroutines to finish, collecting the responses
-	tomcatCheckMapping := waitForDomains(responseChannel, len(instances))
+	tomcatCheckMapping := waitForDomains(httpResponseChannel, len(instances))
+
+	// This is the channel the JMX responses from Jolokia will come back on
+	jmxResponseChannel := make(chan []TomcatCheckResult)
 
 	for _, TomcatInstance := range instances {
 		// TODO: make this concurrent
-		getJmxAttributes(TomcatInstance.ServerIP + ":" + TomcatInstance.JmxPort)
+		go getJmxAttributes(jmxResponseChannel, TomcatInstance)
 	}
+
+	// Wait for all the goroutines to finish, collecting the responses
+	jmxCheckMapping := waitForDomains(jmxResponseChannel, len(instances))
+
+	// Append all results together
+	tomcatCheckMapping = append(tomcatCheckMapping, jmxCheckMapping...)
 
 	// Send the info back to admin portal
 	updateAdminPortal(tomcatCheckMapping)
@@ -163,7 +171,7 @@ func getInstancesFromPortal() []TomcatInstance {
 	return tomcatInstances
 }
 
-func getResponseTime(returnChannel chan TomcatCheckResult, tomcat TomcatInstance, urlToTest string) {
+func getHTTPResponseTime(returnChannel chan []TomcatCheckResult, tomcat TomcatInstance, urlToTest string) {
 	client := http.Client{
 		Timeout: time.Duration(1 * time.Second),
 	}
@@ -186,17 +194,20 @@ func getResponseTime(returnChannel chan TomcatCheckResult, tomcat TomcatInstance
 		}
 	}
 
+	var tomcatCheckArray []TomcatCheckResult
+	tomcatCheckArray = append(tomcatCheckArray, TomcatCheckResult{tomcat.ServerID, httpOK, "time", requestTime})
+
 	// Send our results back to the main processes via our return channel
-	returnChannel <- TomcatCheckResult{tomcat.ServerID, httpOK, "time", requestTime}
+	returnChannel <- tomcatCheckArray
 }
 
 // The extra set of parentheses here are the return type. You can give the return value a name,
 // in this case +tomcatCheckMapping+ and use that name in the function body. Then you don't need to specify
 // what actually gets returned, you've already defined it here.
-func waitForDomains(responseChannel chan TomcatCheckResult, instanceCount int) (tomcatCheckMapping []TomcatCheckResult) {
+func waitForDomains(responseChannel chan []TomcatCheckResult, instanceCount int) (tomcatCheckMapping []TomcatCheckResult) {
 	returnedCount := 0
 	for {
-		tomcatCheckMapping = append(tomcatCheckMapping, <-responseChannel)
+		tomcatCheckMapping = append(tomcatCheckMapping, <-responseChannel...)
 		returnedCount++
 
 		if returnedCount >= instanceCount {
@@ -207,9 +218,11 @@ func waitForDomains(responseChannel chan TomcatCheckResult, instanceCount int) (
 	return
 }
 
-func getJmxAttributes(jmxURL string) (*JolokiaRequestResponse, error) {
-	//jsonRequest := "{\"attribute\":\"DaemonThreadCount,HeapMemoryUsage,ThreadCount,MaxFileDescriptorCount,OpenFileDescriptorCount,ProcessCpuTime\","
-	//jsonRequest += "\"mbean\":\"java.lang:type=*\",\"target\":{\"url\":\"service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi\"},\"type\":\"READ\"}"
+func getJmxAttributes(returnChannel chan []TomcatCheckResult, tomcat TomcatInstance) {
+	var multipleTomcatResults []TomcatCheckResult
+
+	// Constract the target for Jolokia
+	//jmxURL := tomcat.ServerIP + ":" + tomcat.JmxPort
 
 	heapRequest := JolokiaRequest{
 		Type:      "READ",
@@ -245,7 +258,7 @@ func getJmxAttributes(jmxURL string) (*JolokiaRequestResponse, error) {
 		Attribute: "Active15Min",
 		Target: struct {
 			URL string `json:"url"`
-		}{URL: "service:jmx:rmi:///jndi/rmi://" + jmxURL + "/jmxrmi"},
+		}{URL: "service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi"},
 	}
 
 	var requestArray [4]JolokiaRequest
@@ -261,14 +274,16 @@ func getJmxAttributes(jmxURL string) (*JolokiaRequestResponse, error) {
 	logger.Debug("json: " + string(jsonRequest))
 
 	client := &http.Client{
-		Timeout: time.Duration(2 * time.Second),
+		Timeout: time.Duration(3 * time.Second),
 	}
 	req, _ := http.NewRequest("POST", *jolokiaURL, strings.NewReader(string(jsonRequest)))
 	req.Header.Set("User-Agent", cronUserAgent)
 	resp, respErr := client.Do(req)
 
 	if respErr != nil {
-		return nil, respErr
+		logger.Error("Bad jolokia repsonse", respErr)
+		returnChannel <- multipleTomcatResults
+		return
 	}
 	defer resp.Body.Close()
 
@@ -279,17 +294,32 @@ func getJmxAttributes(jmxURL string) (*JolokiaRequestResponse, error) {
 	//logger.Debug("Raw body:", string(contents), dec)
 
 	if err := dec.Decode(&respJ); err != nil {
-		return nil, err
+		logger.Error("Bad jolokia decode", err)
 	}
 
+	// This is our decoded response from jolokia
 	jResponse := &respJ
+
+	var counter int
 	for _, jResp := range *jResponse {
-		mbean := jResp.Request.Mbean
-		v := jResp.Value
+		mbean := string(jResp.Request.Mbean)
+		v := strconv.FormatInt(jResp.Value, 10)
+
+		if mbean == "java.lang:type=Memory" {
+			multipleTomcatResults = append(multipleTomcatResults, TomcatCheckResult{tomcat.ServerID, true, "memory", v})
+		} else if mbean == "java.lang:type=Threading" {
+			multipleTomcatResults = append(multipleTomcatResults, TomcatCheckResult{tomcat.ServerID, true, "threads", v})
+		} else if mbean == "java.lang:type=OperatingSystem" {
+			multipleTomcatResults = append(multipleTomcatResults, TomcatCheckResult{tomcat.ServerID, true, "cpu", v})
+		} else if mbean == "org.sakaiproject:name=Sessions" {
+			multipleTomcatResults = append(multipleTomcatResults, TomcatCheckResult{tomcat.ServerID, true, "sessions", v})
+		}
 		logger.Debug("response value: ", mbean, v)
+		counter++
 	}
 
-	return &respJ, nil
+	// Send our results back to the main processes via our return channel
+	returnChannel <- multipleTomcatResults
 }
 
 func updateAdminPortal(tomcatChecks []TomcatCheckResult) {
