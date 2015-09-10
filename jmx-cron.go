@@ -222,7 +222,7 @@ func getJmxAttributes(returnChannel chan []TomcatCheckResult, tomcat TomcatInsta
 	var multipleTomcatResults []TomcatCheckResult
 
 	// Constract the target for Jolokia
-	//jmxURL := tomcat.ServerIP + ":" + tomcat.JmxPort
+	jmxURL := "service:jmx:rmi:///jndi/rmi://" + tomcat.ServerIP + ":" + tomcat.JmxPort + "/jmxrmi"
 
 	heapRequest := JolokiaRequest{
 		Type:      "READ",
@@ -231,7 +231,7 @@ func getJmxAttributes(returnChannel chan []TomcatCheckResult, tomcat TomcatInsta
 		Path:      "used",
 		Target: struct {
 			URL string `json:"url"`
-		}{URL: "service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi"},
+		}{URL: jmxURL},
 	}
 
 	threadRequest := JolokiaRequest{
@@ -240,7 +240,7 @@ func getJmxAttributes(returnChannel chan []TomcatCheckResult, tomcat TomcatInsta
 		Attribute: "ThreadCount",
 		Target: struct {
 			URL string `json:"url"`
-		}{URL: "service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi"},
+		}{URL: jmxURL},
 	}
 
 	cpuRequest := JolokiaRequest{
@@ -249,7 +249,7 @@ func getJmxAttributes(returnChannel chan []TomcatCheckResult, tomcat TomcatInsta
 		Attribute: "ProcessCpuTime",
 		Target: struct {
 			URL string `json:"url"`
-		}{URL: "service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi"},
+		}{URL: jmxURL},
 	}
 
 	sakaiSessionRequest := JolokiaRequest{
@@ -258,7 +258,7 @@ func getJmxAttributes(returnChannel chan []TomcatCheckResult, tomcat TomcatInsta
 		Attribute: "Active15Min",
 		Target: struct {
 			URL string `json:"url"`
-		}{URL: "service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi"},
+		}{URL: jmxURL},
 	}
 
 	var requestArray [4]JolokiaRequest
