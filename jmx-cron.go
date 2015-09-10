@@ -110,12 +110,15 @@ func main() {
 
 		go getResponseTime(responseChannel, TomcatInstance, urlToTest)
 		logger.Debug("URL to test: ", TomcatInstance)
-
-		getAttr()
 	}
 
 	// Wait for all the goroutines to finish, collecting the responses
 	tomcatCheckMapping := waitForDomains(responseChannel, len(instances))
+
+	for _, TomcatInstance := range instances {
+		// TODO: make this concurrent
+		getJmxAttributes(TomcatInstance.ServerIP + ":" + TomcatInstance.JmxPort)
+	}
 
 	// Send the info back to admin portal
 	updateAdminPortal(tomcatCheckMapping)
@@ -204,18 +207,7 @@ func waitForDomains(responseChannel chan TomcatCheckResult, instanceCount int) (
 	return
 }
 
-/*
-func checkJolokia(service, domain, bean, attr string) (interface{}, error) {
-	logger.Debug("checkJolokia: " + service + "/jolokia/read/" + domain + ":" + bean + "/" + attr)
-	resp, err := getAttr(service + "/jolokia/read/" + domain + ":" + bean + "/" + attr)
-	if err != nil {
-		return "", err
-	}
-	return resp.Value, nil
-}
-*/
-
-func getAttr() (*JolokiaRequestResponse, error) {
+func getJmxAttributes(jmxURL string) (*JolokiaRequestResponse, error) {
 	//jsonRequest := "{\"attribute\":\"DaemonThreadCount,HeapMemoryUsage,ThreadCount,MaxFileDescriptorCount,OpenFileDescriptorCount,ProcessCpuTime\","
 	//jsonRequest += "\"mbean\":\"java.lang:type=*\",\"target\":{\"url\":\"service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi\"},\"type\":\"READ\"}"
 
@@ -253,7 +245,7 @@ func getAttr() (*JolokiaRequestResponse, error) {
 		Attribute: "Active15Min",
 		Target: struct {
 			URL string `json:"url"`
-		}{URL: "service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi"},
+		}{URL: "service:jmx:rmi:///jndi/rmi://" + jmxURL + "/jmxrmi"},
 	}
 
 	var requestArray [4]JolokiaRequest
@@ -268,7 +260,9 @@ func getAttr() (*JolokiaRequestResponse, error) {
 	}
 	logger.Debug("json: " + string(jsonRequest))
 
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: time.Duration(2 * time.Second),
+	}
 	req, _ := http.NewRequest("POST", *jolokiaURL, strings.NewReader(string(jsonRequest)))
 	req.Header.Set("User-Agent", cronUserAgent)
 	resp, respErr := client.Do(req)
@@ -295,32 +289,6 @@ func getAttr() (*JolokiaRequestResponse, error) {
 		logger.Debug("response value: ", mbean, v)
 	}
 
-	//z := m
-
-	/*
-		for k, v := range *z {
-			m := v.(map[string]interface{})
-			for x, y := range m {
-				switch yy := y.(type) {
-				case string:
-					fmt.Println(x, "is string", yy)
-				case int:
-					fmt.Println(x, "is int", yy)
-				case float64:
-					fmt.Println(x, "is float64", yy)
-				case []interface{}:
-					fmt.Println(k, "is an array:")
-					for i, u := range yy {
-						fmt.Println(i, u)
-					}
-				default:
-					logger.Debugf("xx", yy)
-					fmt.Println(x, "is of a type I don't know how to handle")
-				}
-			}
-		}
-		//logger.Debugf("getAttr ", &respJ.Value)
-	*/
 	return &respJ, nil
 }
 
