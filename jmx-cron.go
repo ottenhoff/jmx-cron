@@ -57,6 +57,33 @@ type TomcatCheckResult struct {
 	ServerResponse string
 }
 
+// JolokiaRequest gets POSTed to Jolokia
+type JolokiaRequest struct {
+	Type      string `json:"type"`
+	Mbean     string `json:"mbean"`
+	Attribute string `json:"attribute"`
+	Path      string `json:"path"`
+	Target    struct {
+		URL string `json:"url"`
+	} `json:"target"`
+}
+
+// JolokiaRequestResponse Auto-gen from http://mholt.github.io/json-to-go/
+type JolokiaRequestResponse struct {
+	Timestamp int `json:"timestamp"`
+	Status    int `json:"status"`
+	Request   struct {
+		Mbean  string `json:"mbean"`
+		Path   string `json:"path"`
+		Target struct {
+			URL string `json:"url"`
+		} `json:"target"`
+		Attribute string `json:"attribute"`
+		Type      string `json:"type"`
+	} `json:"request"`
+	Value int64 `json:"value"`
+}
+
 func init() {
 	flag.Parse()
 	if len(*token) < 1 {
@@ -188,12 +215,28 @@ func checkJolokia(service, domain, bean, attr string) (interface{}, error) {
 }
 */
 
-func getAttr() (*JolokiaReadResponse, error) {
-	jsonRequest := "{\"attribute\":\"DaemonThreadCount,HeapMemoryUsage,ThreadCount,MaxFileDescriptorCount,OpenFileDescriptorCount,ProcessCpuTime\","
-	jsonRequest += "\"mbean\":\"java.lang:type=*\",\"target\":{\"url\":\"service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi\"},\"type\":\"READ\"}"
+func getAttr() (*JolokiaRequestResponse, error) {
+	//jsonRequest := "{\"attribute\":\"DaemonThreadCount,HeapMemoryUsage,ThreadCount,MaxFileDescriptorCount,OpenFileDescriptorCount,ProcessCpuTime\","
+	//jsonRequest += "\"mbean\":\"java.lang:type=*\",\"target\":{\"url\":\"service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi\"},\"type\":\"READ\"}"
+
+	jr := JolokiaRequest{
+		Type:      "READ",
+		Mbean:     "java.lang:type=Memory",
+		Attribute: "HeapMemoryUsage",
+		Path:      "used",
+		Target: struct {
+			URL string `json:"url"`
+		}{URL: "service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi"},
+	}
+
+	jsonRequest, err := json.Marshal(jr)
+	if err != nil {
+		panic("Could not marshal json for jolokia request")
+	}
+	logger.Debug("json: " + string(jsonRequest))
 
 	client := &http.Client{}
-	req, _ := http.NewRequest("POST", *jolokiaURL, strings.NewReader(jsonRequest))
+	req, _ := http.NewRequest("POST", *jolokiaURL, strings.NewReader(string(jsonRequest)))
 	//req.Header.Set("Content-Type", "text/plain")
 	req.Header.Set("User-Agent", cronUserAgent)
 	resp, respErr := client.Do(req)
@@ -202,37 +245,45 @@ func getAttr() (*JolokiaReadResponse, error) {
 		return nil, respErr
 	}
 	defer resp.Body.Close()
-	var respJ JolokiaReadResponse
+
+	var respJ JolokiaRequestResponse
 	dec := json.NewDecoder(resp.Body)
+
+	//contents, _ := ioutil.ReadAll(resp.Body)
+	//logger.Debug("Raw body:", string(contents), dec)
+
 	if err := dec.Decode(&respJ); err != nil {
 		return nil, err
 	}
 
-	m := &respJ.Value
-	z := m
+	jResponse := &respJ.Value
+	logger.Debug("response value: ", jResponse)
+	//z := m
 
-	for k, v := range *z {
-		m := v.(map[string]interface{})
-		for x, y := range m {
-			switch yy := y.(type) {
-			case string:
-				fmt.Println(x, "is string", yy)
-			case int:
-				fmt.Println(x, "is int", yy)
-			case float64:
-				fmt.Println(x, "is float64", yy)
-			case []interface{}:
-				fmt.Println(k, "is an array:")
-				for i, u := range yy {
-					fmt.Println(i, u)
+	/*
+		for k, v := range *z {
+			m := v.(map[string]interface{})
+			for x, y := range m {
+				switch yy := y.(type) {
+				case string:
+					fmt.Println(x, "is string", yy)
+				case int:
+					fmt.Println(x, "is int", yy)
+				case float64:
+					fmt.Println(x, "is float64", yy)
+				case []interface{}:
+					fmt.Println(k, "is an array:")
+					for i, u := range yy {
+						fmt.Println(i, u)
+					}
+				default:
+					logger.Debugf("xx", yy)
+					fmt.Println(x, "is of a type I don't know how to handle")
 				}
-			default:
-				logger.Debugf("xx", yy)
-				fmt.Println(x, "is of a type I don't know how to handle")
 			}
 		}
-	}
-	//logger.Debugf("getAttr ", &respJ.Value)
+		//logger.Debugf("getAttr ", &respJ.Value)
+	*/
 	return &respJ, nil
 }
 
