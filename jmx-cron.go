@@ -69,7 +69,7 @@ type JolokiaRequest struct {
 }
 
 // JolokiaRequestResponse Auto-gen from http://mholt.github.io/json-to-go/
-type JolokiaRequestResponse struct {
+type JolokiaRequestResponse []struct {
 	Timestamp int `json:"timestamp"`
 	Status    int `json:"status"`
 	Request   struct {
@@ -229,10 +229,40 @@ func getAttr() (*JolokiaRequestResponse, error) {
 		}{URL: "service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi"},
 	}
 
-	var a [5]JolokiaRequest
-	a[0] = heapRequest
+	threadRequest := JolokiaRequest{
+		Type:      "READ",
+		Mbean:     "java.lang:type=Threading",
+		Attribute: "ThreadCount",
+		Target: struct {
+			URL string `json:"url"`
+		}{URL: "service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi"},
+	}
 
-	jsonRequest, err := json.Marshal(a)
+	cpuRequest := JolokiaRequest{
+		Type:      "READ",
+		Mbean:     "java.lang:type=OperatingSystem",
+		Attribute: "ProcessCpuTime",
+		Target: struct {
+			URL string `json:"url"`
+		}{URL: "service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi"},
+	}
+
+	sakaiSessionRequest := JolokiaRequest{
+		Type:      "READ",
+		Mbean:     "org.sakaiproject:name=Sessions",
+		Attribute: "Active15Min",
+		Target: struct {
+			URL string `json:"url"`
+		}{URL: "service:jmx:rmi:///jndi/rmi://10.4.100.215:51889/jmxrmi"},
+	}
+
+	var requestArray [4]JolokiaRequest
+	requestArray[0] = heapRequest
+	requestArray[1] = threadRequest
+	requestArray[2] = cpuRequest
+	requestArray[3] = sakaiSessionRequest
+
+	jsonRequest, err := json.Marshal(requestArray)
 	if err != nil {
 		panic("Could not marshal json for jolokia request")
 	}
@@ -240,7 +270,6 @@ func getAttr() (*JolokiaRequestResponse, error) {
 
 	client := &http.Client{}
 	req, _ := http.NewRequest("POST", *jolokiaURL, strings.NewReader(string(jsonRequest)))
-	//req.Header.Set("Content-Type", "text/plain")
 	req.Header.Set("User-Agent", cronUserAgent)
 	resp, respErr := client.Do(req)
 
@@ -259,8 +288,13 @@ func getAttr() (*JolokiaRequestResponse, error) {
 		return nil, err
 	}
 
-	jResponse := &respJ.Value
-	logger.Debug("response value: ", jResponse)
+	jResponse := &respJ
+	for _, jResp := range *jResponse {
+		mbean := jResp.Request.Mbean
+		v := jResp.Value
+		logger.Debug("response value: ", mbean, v)
+	}
+
 	//z := m
 
 	/*
