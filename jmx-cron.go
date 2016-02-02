@@ -173,12 +173,11 @@ func getInstancesFromPortal() []TomcatInstance {
 
 func getHTTPResponseTime(returnChannel chan []TomcatCheckResult, tomcat TomcatInstance, urlToTest string) {
 	client := http.Client{
-		Timeout: time.Duration(1 * time.Second),
+		Timeout: time.Duration(4 * time.Second),
 	}
-	client.Get(urlToTest)
 
 	timeStart := time.Now()
-	resp, err := http.Get(urlToTest)
+	resp, err := client.Get(urlToTest)
 	requestTime := strconv.FormatInt(time.Since(timeStart).Nanoseconds()/1000, 10)
 	httpOK := false
 
