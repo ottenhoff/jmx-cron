@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"runtime"
@@ -173,20 +172,20 @@ func getInstancesFromPortal() []TomcatInstance {
 
 func getHTTPResponseTime(returnChannel chan []TomcatCheckResult, tomcat TomcatInstance, urlToTest string) {
 	client := http.Client{
-		Timeout: time.Duration(4 * time.Second),
+		Timeout: time.Duration(5 * time.Second),
 	}
 
 	timeStart := time.Now()
 	resp, err := client.Get(urlToTest)
-	requestTime := strconv.FormatInt(time.Since(timeStart).Nanoseconds()/1000, 10)
 	httpOK := false
+	requestTime := "0"
 
 	if err != nil {
-		log.Printf("Error fetching: %v", err)
-		httpOK = false
+		logger.Debugf("Error fetching: %v", err)
 	} else {
 		defer resp.Body.Close()
 
+		requestTime = strconv.FormatInt(time.Since(timeStart).Nanoseconds()/1000, 10)
 		logger.Debug("Request time:", urlToTest, requestTime, resp.StatusCode)
 		if resp.StatusCode == http.StatusOK {
 			httpOK = true
@@ -280,7 +279,7 @@ func getJmxAttributes(returnChannel chan []TomcatCheckResult, tomcat TomcatInsta
 	resp, respErr := client.Do(req)
 
 	if respErr != nil {
-		logger.Error("Bad jolokia repsonse", respErr)
+		logger.Debug("Bad jolokia response", respErr)
 		returnChannel <- multipleTomcatResults
 		return
 	}
