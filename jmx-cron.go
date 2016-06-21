@@ -99,9 +99,13 @@ func main() {
 	instances := getInstancesFromPortal()
 
 	// This is the channel the simple HTTP check responses will come back on
-	httpResponseChannel := make(chan []TomcatCheckResult)
+	httpResponseChannel := make(chan []TomcatCheckResult, 8)
 
+	rate := time.Second / 10
+	throttle := time.Tick(rate)
 	for _, TomcatInstance := range instances {
+		<-throttle  // rate limit our Service.Method RPCs
+
 		urlToTest := "http://" + TomcatInstance.ServerIP + ":" + TomcatInstance.HTTPPort + "/"
 		if strings.Contains(TomcatInstance.ProjectName, "sakai") {
 			urlToTest += "portal/xlogin"
@@ -114,7 +118,7 @@ func main() {
 	tomcatCheckMapping := waitForDomains(httpResponseChannel, len(instances))
 
 	// This is the channel the JMX responses from Jolokia will come back on
-	jmxResponseChannel := make(chan []TomcatCheckResult)
+	jmxResponseChannel := make(chan []TomcatCheckResult, 8)
 
 	for _, TomcatInstance := range instances {
 		// TODO: make this concurrent
