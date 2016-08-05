@@ -23,6 +23,7 @@ var token = flag.String("token", "", "the custom security token")
 var localIP = flag.String("ips", "", "ips to check")
 var clientID = flag.String("clientID", "", "client id")
 var jolokiaURL = flag.String("jolokia", "http://10.4.100.101:32222/jolokia", "Jolokia endpoint")
+var jolokiaTimeout = flag.Int64("timeout", 3000, "Jolokia timeout in ms")
 
 //var propertyFiles = [4]string{"instance.properties", "dev.properties", "local.properties", "sakai.properties"}
 var logger = stdlog.GetFromFlags()
@@ -104,7 +105,7 @@ func main() {
 	rate := time.Second / 10
 	throttle := time.Tick(rate)
 	for _, TomcatInstance := range instances {
-		<-throttle  // rate limit our Service.Method RPCs
+		<-throttle // rate limit our Service.Method RPCs
 
 		urlToTest := "http://" + TomcatInstance.ServerIP + ":" + TomcatInstance.HTTPPort + "/"
 		if strings.Contains(TomcatInstance.ProjectName, "sakai") {
@@ -276,7 +277,7 @@ func getJmxAttributes(returnChannel chan []TomcatCheckResult, tomcat TomcatInsta
 	logger.Debug("json: " + string(jsonRequest))
 
 	client := &http.Client{
-		Timeout: time.Duration(3 * time.Second),
+		Timeout: time.Duration(*jolokiaTimeout),
 	}
 	req, _ := http.NewRequest("POST", *jolokiaURL, strings.NewReader(string(jsonRequest)))
 	req.Header.Set("User-Agent", cronUserAgent)
