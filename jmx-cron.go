@@ -178,6 +178,9 @@ func getInstancesFromPortal() []TomcatInstance {
 func getHTTPResponseTime(returnChannel chan []TomcatCheckResult, tomcat TomcatInstance, urlToTest string) {
 	client := http.Client{
 		Timeout: time.Duration(5 * time.Second),
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 
 	timeStart := time.Now()
@@ -192,7 +195,7 @@ func getHTTPResponseTime(returnChannel chan []TomcatCheckResult, tomcat TomcatIn
 
 		requestTime = strconv.FormatInt(time.Since(timeStart).Nanoseconds()/1000, 10)
 		logger.Debug("Request time:", urlToTest, requestTime, resp.StatusCode)
-		if resp.StatusCode == http.StatusOK {
+		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusFound {
 			httpOK = true
 		}
 	}
