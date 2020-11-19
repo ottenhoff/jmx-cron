@@ -267,11 +267,31 @@ func getJmxAttributes(returnChannel chan []TomcatCheckResult, tomcat TomcatInsta
 		}{URL: jmxURL},
 	}
 
-	var requestArray [4]JolokiaRequest
+	hikariRequest := JolokiaRequest{
+		Type:      "READ",
+		Mbean:     "com.zaxxer.hikari:type=Pool (sakai)",
+		Attribute: "ActiveConnections",
+		Target: struct {
+			URL string `json:"url"`
+		}{URL: jmxURL},
+	}
+
+	garbageRequest := JolokiaRequest{
+		Type:      "READ",
+		Mbean:     "java.lang:name=ConcurrentMarkSweep,type=GarbageCollector",
+		Attribute: "CollectionTime",
+		Target: struct {
+			URL string `json:"url"`
+		}{URL: jmxURL},
+	}
+
+	var requestArray [6]JolokiaRequest
 	requestArray[0] = heapRequest
 	requestArray[1] = threadRequest
 	requestArray[2] = cpuRequest
 	requestArray[3] = sakaiSessionRequest
+	requestArray[4] = hikariRequest
+	requestArray[5] = garbageRequest
 
 	jsonRequest, err := json.Marshal(requestArray)
 	if err != nil {
@@ -319,6 +339,10 @@ func getJmxAttributes(returnChannel chan []TomcatCheckResult, tomcat TomcatInsta
 			multipleTomcatResults = append(multipleTomcatResults, TomcatCheckResult{tomcat.ServerID, true, "cpu", v})
 		} else if mbean == "org.sakaiproject:name=Sessions" {
 			multipleTomcatResults = append(multipleTomcatResults, TomcatCheckResult{tomcat.ServerID, true, "sessions", v})
+		} else if mbean == "com.zaxxer.hikari:type=Pool (sakai)" {
+			multipleTomcatResults = append(multipleTomcatResults, TomcatCheckResult{tomcat.ServerID, true, "db", v})
+		} else if mbean == "java.lang:name=ConcurrentMarkSweep,type=GarbageCollector" {
+			multipleTomcatResults = append(multipleTomcatResults, TomcatCheckResult{tomcat.ServerID, true, "gc", v})
 		}
 		logger.Debug("response value: ", mbean, v)
 		counter++
